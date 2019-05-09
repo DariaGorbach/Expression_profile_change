@@ -1,0 +1,325 @@
+---
+title: "Chemokine signaling pathway"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+rm(list = ls(all.names = TRUE)) # Clear all memory
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(KEGGgraph)
+library(KEGG.db)
+library(KEGGREST)
+library(gage)
+library("readxl")
+library(dplyr)
+
+data(kegg.gs)
+data(kegg.gs.dise)
+
+
+
+```
+
+```{r}
+
+diff_expressed <- read_excel("C:/Users/admin/Desktop/gse_16357_001.xlsx")
+diff_expressed <- diff_expressed$gse16357_entrez
+
+#diff_expressed <- read_excel("C:/Users/admin/Desktop/experiment.xlsx")
+#diff_expressed <- diff_expressed$gse16357
+
+diff_expressed <- as.vector(diff_expressed)
+
+diff_expressed <- diff_expressed[-grep("/+", diff_expressed)]
+
+```
+
+
+```{r}
+all_KEGG_pathways <- append(kegg.gs, kegg.gs.dise)
+list_intersected_genes <- lapply(all_KEGG_pathways, function(x) intersect(diff_expressed, x))
+
+short_list <-  list_intersected_genes[lengths(list_intersected_genes) >= 5]
+pathids <- substr(names(short_list), start=4, stop=8)
+
+very_short_list <- pathids[124:125]
+
+very_short_list <- c('05211')
+
+graph_list <- lapply(very_short_list, function(hsa_name){
+  mapkG <- try(
+  {
+    tmp <- tempfile()
+    print(hsa_name)
+    retrieveKGML(hsa_name, organism="hsa", destfile = tmp, method="internal", quiet=TRUE)
+    mapkG <- parseKGML2Graph(tmp,expandGenes=TRUE)
+    mapkG
+  })  
+})
+ok_graphs <- sapply(graph_list, function(x) typeof(x) == "S4")
+graph_list <- graph_list[ok_graphs]
+mega_graph <- mergeKEGGgraphs(graph_list)
+
+```
+
+```{r}
+mega_nodes <- nodes(mega_graph)
+mega_edges <- edges(mega_graph)
+
+symbol_names <- sapply(mega_nodes, function(x) getKEGGnodeData(mega_graph,x)@graphics@name)
+unique_symbol_names <- unique(unname(symbol_names))
+```
+
+```{r First-level neighbours}
+
+forward_edges_list <- vector("list", length(unique_symbol_names))
+names(forward_edges_list) <- unique_symbol_names
+
+counter <- 0
+for (node_name in attributes(mega_edges)$`names`){
+  counter <- counter + 1
+  print(counter)
+  disp_node_name <- getKEGGnodeData(mega_graph,node_name)@graphics@name
+  print(disp_node_name)
+  
+  current_isoform_children <- unname(sapply(mega_edges[[node_name]], 
+                                            function(x) getKEGGnodeData(mega_graph,x)@graphics@name))
+  if(length(current_isoform_children)!=0){
+    forward_edges_list[[disp_node_name]] <- union(forward_edges_list[[disp_node_name]],
+                                                  current_isoform_children)  
+  }
+}
+forward_edges_list <- forward_edges_list[lapply(forward_edges_list,length)>0]
+
+reverse_edges_list = list()
+for(node_name in names(forward_edges_list)){
+  for(child in forward_edges_list[[node_name]]){
+    reverse_edges_list[[child]] <- c(reverse_edges_list[[child]],node_name)
+  }
+}
+```
+
+```{r All neighbours}
+gene_iterator_forward <- function(goal_gene){
+  print(goal_gene)
+  flag_visited <- rep(0,length(unique_symbol_names))
+  names(flag_visited) <- unique_symbol_names
+  
+  all_children <- forward_edges_list[[goal_gene]]
+  
+  flag_visited[all_children] <- 1
+  counter <- 1
+  
+  while (counter <= length(all_children)) {
+    current_child <- all_children[counter]
+    children_of_this_child <- forward_edges_list[[current_child]]
+
+    for_children_to_add <- names(which(flag_visited[children_of_this_child] == 0))
+  
+    all_children <- c(all_children, for_children_to_add)
+    
+    flag_visited[for_children_to_add] <- 1
+    counter <- counter + 1
+
+  }
+  return (all_children)
+}
+
+all_children <- lapply(unique_symbol_names, gene_iterator_forward)
+names(all_children) <- unique_symbol_names
+
+######## parents ##################
+gene_iterator <- function(goal_gene){
+  
+  flag_visited <- rep(0,length(sub_nodes))
+  names(flag_visited) <- nodes
+  
+  all_parents <- reverse_edges_list[[goal_gene]]
+  flag_visited[all_parents] <- 1
+  counter <- 1
+  
+  while (counter <= length(all_parents)) {
+    current_parent <- all_parents[counter]
+    parents_of_this_parent <- reverse_edges_list[[current_parent]]
+  
+    parents_to_add <- names(which(flag_visited[parents_of_this_parent] == 0))
+  
+    all_parents <- c(all_parents, parents_to_add)
+    flag_visited[parents_to_add] <- 1
+    print(all_parents)
+    counter <- counter + 1
+  
+  }
+  return (all_parents)
+}
+
+all_parents <- lapply(nodes, gene_iterator)
+names(all_parents) <- nodes
+  
+```
+
+
+```{r #for megagraph}
+#unique_nodes <- unique(sapply(mega_nodes, function(x) getKEGGnodeData(result_mega_graph,x)@graphics@name))
+#print(unique_nodes)
+
+forward_edges_list = list()
+for (node_name in attributes(mega_edges)$`names`){
+  disp_node_name <- getKEGGnodeData(result_mega_graph,node_name)@graphics@name
+  print(disp_node_name)
+  forward_edges_list[[disp_node_name]] <- unname(sapply(mega_edges[[node_name]], function(x) getKEGGnodeData(result_mega_graph,x)@graphics@name))
+}
+
+
+```
+
+```{r}
+write.csv(forward_edges_list, file = "forward_edges_list.csv")
+write.table(reverse_edges_list, file = "reverse_edges_list.txt", sep = "\t",
+            row.names = F)
+```
+
+
+?
+
+
+
+
+
+
+
+
+
+
+
+
+
+Для одного графа
+```{r}
+#chemkG <- parseKGML2Graph(tmp,expandGenes=TRUE)
+chemkG <- parseKGML2Graph(tmp,expandGenes=FALSE,genesOnly=TRUE) # Here we can find compound!
+
+pw_nodes <- nodes(chemkG)
+pw_edges <- edges(chemkG)
+```
+
+```{r}
+chem_data <- parseKGML2DataFrame(tmp)
+head(chem_data)
+
+
+```
+
+```{r #получение следующих за данной вершин}
+
+unique_nodes_1 <- unique(sapply(pw_nodes, function(x) getKEGGnodeData(chemkG,x)@graphics@name))
+
+forward_edges_list_1 = list()
+for (node_name in attributes(pw_edges)$`names`){
+  disp_node_name <- getKEGGnodeData(chemkG,node_name)@graphics@name
+  forward_edges_list[[disp_node_name]] <- unname(sapply(pw_edges[[node_name]], function(x) getKEGGnodeData(chemkG,x)@graphics@name))
+}
+
+reverse_edges_list = list()
+for(node_name in names(forward_edges_list)){
+  for(child in forward_edges_list[[node_name]]){
+    reverse_edges_list[[child]] <- c(reverse_edges_list[[child]],node_name)
+  }
+}
+
+forward_edges_list <- forward_edges_list[lapply(forward_edges_list,length)>0]
+```
+
+```{r}
+
+gene_iterator <- function(goal_gene){
+  
+  flag_visited <- rep(0,length(unique_nodes_1))
+  names(flag_visited) <- unique_nodes_1
+  
+  all_parents <- reverse_edges_list[[goal_gene]]
+  flag_visited[all_parents] <- 1
+  counter <- 1
+  
+  while (counter <= length(all_parents)) {
+    current_parent <- all_parents[counter]
+    parents_of_this_parent <- reverse_edges_list[[current_parent]]
+  
+    parents_to_add <- names(which(flag_visited[parents_of_this_parent] == 0))
+  
+    all_parents <- c(all_parents, parents_to_add)
+    flag_visited[parents_to_add] <- 1
+    print(all_parents)
+    counter <- counter + 1
+  
+  }
+  return (all_parents)
+}
+
+all_parents <- lapply(unique_nodes_1, gene_iterator)
+names(all_parents) <- unique_nodes_1
+  
+```
+
+
+```{r}
+
+gene_iterator_forward <- function(goal_gene){
+  
+  
+  flag_visited <- rep(0,length(unique_nodes))
+  names(flag_visited) <- unique_nodes
+  
+  all_children <- forward_edges_list[[goal_gene]]
+  
+  flag_visited[all_children] <- 1
+  counter <- 1
+  
+  while (counter <= length(all_children)) {
+    current_child <- all_children[counter]
+    children_of_this_child <- forward_edges_list[[current_child]]
+
+    for_children_to_add <- names(which(flag_visited[children_of_this_child] == 0))
+  
+    all_children <- c(all_children, for_children_to_add)
+    
+#    print(for_parents_to_add)
+    flag_visited[for_children_to_add] <- 1
+#    print(all_parents_for)
+    counter <- counter + 1
+  
+  }
+  return (all_children)
+}
+
+
+all_children <- lapply(unique_nodes_1, gene_iterator_forward)
+names(all_children) <- unique_nodes_1
+  
+```
+
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+```{r}
+help(package=KEGGgraph)
+```
