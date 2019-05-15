@@ -46,12 +46,12 @@ diff_expressed <- diff_expressed[-grep("/+", diff_expressed)]
 all_KEGG_pathways <- append(kegg.gs, kegg.gs.dise)
 list_intersected_genes <- lapply(all_KEGG_pathways, function(x) intersect(diff_expressed, x))
 
-short_list <-  list_intersected_genes[lengths(list_intersected_genes) >= 5]
+short_list <- list_intersected_genes[lengths(list_intersected_genes) >= 5]
 pathids <- substr(names(short_list), start=4, stop=8)
 
-very_short_list <- pathids[124:125]
+#very_short_list <- pathids[124:125]
 
-very_short_list <- c('05211')
+very_short_list <- c('04330')
 
 graph_list <- lapply(very_short_list, function(hsa_name){
   mapkG <- try(
@@ -59,7 +59,7 @@ graph_list <- lapply(very_short_list, function(hsa_name){
     tmp <- tempfile()
     print(hsa_name)
     retrieveKGML(hsa_name, organism="hsa", destfile = tmp, method="internal", quiet=TRUE)
-    mapkG <- parseKGML2Graph(tmp,expandGenes=TRUE)
+    mapkG <- parseKGML2Graph(tmp,expandGenes=F)
     mapkG
   })  
 })
@@ -74,7 +74,25 @@ mega_nodes <- nodes(mega_graph)
 mega_edges <- edges(mega_graph)
 
 symbol_names <- sapply(mega_nodes, function(x) getKEGGnodeData(mega_graph,x)@graphics@name)
+hsa_names <- sapply(mega_nodes, function(x) getKEGGnodeData(mega_graph,x)@name)
+
 unique_symbol_names <- unique(unname(symbol_names))
+```
+
+```{r Make dictionary}
+dict_hsa_to_symb = c()
+#names_dict_hsa_to_symb = c()
+
+for(k in 1:length(symbol_names)){
+  current_hsa <- sapply(hsa_names[[k]], function(x) substr(x,start = 5, stop = nchar(x)))
+  #current_hsa <- sapply(hsa_names[[k]], function(x) translateKEGGID2GeneID(x))
+  current_symbol <- rep(symbol_names[k],length(current_hsa))
+  names(current_symbol) <- current_hsa
+  dict_hsa_to_symb <- c(dict_hsa_to_symb, current_symbol)
+}
+
+diff_expressed_gene_symb <- dict_hsa_to_symb[diff_expressed]
+diff_expressed_gene_symb <-unique(unname(diff_expressed_gene_symb[!is.na(diff_expressed_gene_symb)]))
 ```
 
 ```{r First-level neighbours}
@@ -122,24 +140,25 @@ gene_iterator_forward <- function(goal_gene){
     children_of_this_child <- forward_edges_list[[current_child]]
 
     for_children_to_add <- names(which(flag_visited[children_of_this_child] == 0))
-  
+
     all_children <- c(all_children, for_children_to_add)
     
     flag_visited[for_children_to_add] <- 1
     counter <- counter + 1
 
   }
+  all_children <- intersect(all_children, diff_expressed_gene_symb)
   return (all_children)
 }
 
-all_children <- lapply(unique_symbol_names, gene_iterator_forward)
-names(all_children) <- unique_symbol_names
+all_children <- lapply(diff_expressed_gene_symb, gene_iterator_forward)
+names(all_children) <- diff_expressed_gene_symb
 
 ######## parents ##################
 gene_iterator <- function(goal_gene){
   
-  flag_visited <- rep(0,length(sub_nodes))
-  names(flag_visited) <- nodes
+  flag_visited <- rep(0,length(unique_symbol_names))
+  names(flag_visited) <- unique_symbol_names
   
   all_parents <- reverse_edges_list[[goal_gene]]
   flag_visited[all_parents] <- 1
@@ -160,8 +179,8 @@ gene_iterator <- function(goal_gene){
   return (all_parents)
 }
 
-all_parents <- lapply(nodes, gene_iterator)
-names(all_parents) <- nodes
+all_parents <- lapply(unique_symbol_names, gene_iterator)
+names(all_parents) <- unique_symbol_names
   
 ```
 
