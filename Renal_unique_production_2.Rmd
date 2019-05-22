@@ -49,9 +49,6 @@ list_intersected_genes <- lapply(all_KEGG_pathways, function(x) intersect(diff_e
 short_list <- list_intersected_genes[lengths(list_intersected_genes) >= 5]
 pathids <- substr(names(short_list), start=4, stop=8)
 
-#very_short_list <- pathids[1:3]
-#very_short_list <- c('00010')
-
 graph_list <- lapply(pathids, function(hsa_name){
   mapkG <- try(
   {
@@ -114,12 +111,6 @@ for (node_name in attributes(mega_edges)$`names`){
 }
 forward_edges_list <- forward_edges_list[lapply(forward_edges_list,length)>0]
 
-reverse_edges_list = list()
-for(node_name in names(forward_edges_list)){
-  for(child in forward_edges_list[[node_name]]){
-    reverse_edges_list[[child]] <- c(reverse_edges_list[[child]],node_name)
-  }
-}
 ```
 
 ```{r All neighbours}
